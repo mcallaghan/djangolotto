@@ -1,0 +1,178 @@
+<head>
+<script src="//cdnjs.cloudflare.com/ajax/libs/d3/4.8.0/d3.min.js"></script>
+<script src="//unpkg.com/d3-force-bounce@0.4/dist/d3-force-bounce.min.js"></script>
+<script src="//unpkg.com/d3-force-surface@0.4/dist/d3-force-surface.min.js"></script>
+
+{% load static %}
+<link rel="stylesheet" type="text/css" href="{% static 'lotto/style.css' %}" />
+
+</head>
+
+<body>
+
+<div class="main">
+    <h2>MCC Lunch Lottery</h2>
+    <hr>
+    <div class="form"
+    Hello colleague!
+    <p>Enter your avaialibility for the week beginning {{nextweek}} to enter the draw.
+
+    <form action="" method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <input type="submit" value="Submit" />
+    </form>
+
+    <svg id="canvas"></svg>
+
+</div>
+
+</body>
+
+<script>
+
+var nodes = {{nodes | safe }}
+var tid = {{tid | safe}}
+
+console.log(nodes)
+//var simulation = d3.forceSimulation(nodes)
+
+const GAS_DENSITY = 0.0008, // particles per sq px
+			NUM_DIFFUSERS = 5,
+			DIFFUSER_RADIUS = 25;
+
+const canvasWidth = 700,
+	canvasHeight = 500,
+	numGasParticles = Math.round(canvasWidth * canvasHeight * GAS_DENSITY),
+	svgCanvas = d3.select('svg#canvas')
+		.attr('width', canvasWidth)
+		.attr('height', canvasHeight);
+
+var div = d3.select("body").append("div")
+    .attr("class", "tooltip")
+    .style("opacity", 0);
+
+
+function randomVelocity(temp) {
+	// The Maxwell-Boltzman velocity distribution where temp is a renormalized temperature temp = kT/m
+	return d3.randomNormal(0, Math.sqrt(temp))();
+}
+
+function generateParticles(users) {
+    temp=15
+	const diffusers = users.map((d) => {
+		return {
+			x: Math.random() * canvasWidth,
+			y: Math.random() * canvasHeight,
+			vx: 0,
+			vy: 0,
+			r: DIFFUSER_RADIUS,
+            name: d.fields.name,
+            id: d.pk
+		}
+	});
+
+    console.log(diffusers)
+
+
+	const gas = d3.range(numGasParticles).map(() => {
+		return {
+			x: Math.random() * canvasWidth,
+			y: Math.random() * canvasHeight,
+			vx: randomVelocity(temp),
+			vy: randomVelocity(temp),
+			r: 3
+		}
+	});
+
+	return diffusers.concat(gas);
+}
+
+
+
+const forceSim = d3.forceSimulation()
+	.alphaDecay(0)
+	.velocityDecay(0)
+	.on('tick', particleDigest)
+    // .on('mouseover', function(d) {
+    //     console.log(d.fields.name)
+    // })
+	.force('bounce', d3.forceBounce()
+		.radius(d => d.r)
+	)
+	.force('container', d3.forceSurface()
+		.surfaces([
+			{from: {x:0,y:0}, to: {x:0,y:canvasHeight}},
+			{from: {x:0,y:canvasHeight}, to: {x:canvasWidth,y:canvasHeight}},
+			{from: {x:canvasWidth,y:canvasHeight}, to: {x:canvasWidth,y:0}},
+			{from: {x:canvasWidth,y:0}, to: {x:0,y:0}}
+		])
+		.oneWay(true)
+		.radius(d => d.r)
+	)
+	.nodes(generateParticles(nodes));
+
+    var node = svgCanvas.selectAll(".node")
+
+    console.log(node)
+
+// Event handlers
+function onTemperatureChange(temp) {
+	d3.select('#temperature-val').text(temp);
+	let updatedParticles = forceSim.nodes().map(node => {
+		return node.r === DIFFUSER_RADIUS ? node : {
+			x: node.x,
+			y: node.y,
+			vx: node.vx * Math.sqrt(temp) / Math.sqrt(TEMP),
+			vy: node.vy * Math.sqrt(temp) / Math.sqrt(TEMP),
+			r: 3
+		};
+	})
+	forceSim.nodes(updatedParticles);
+	TEMP = temp;
+}
+
+//
+
+function particleDigest() {
+	let particle = svgCanvas.selectAll('circle.particle').data(forceSim.nodes());
+
+	particle.exit().remove();
+
+	particle.merge(
+		particle.enter().append('circle')
+			.classed('particle', true)
+			.attr('r', d=>d.r)
+			.attr('fill', 'darkslategrey')
+            .attr('stroke-width', function(d) {
+                if (d.id==tid) {
+                    return 2
+                } else {
+                    return 0
+                }
+            })
+            .attr('stroke', 'red')
+            .on('mouseover', function(d) {
+                if ('name' in d) {
+                    console.log(d)
+                    div.transition()
+                    .duration(200)
+                    .style("opacity",.9);
+                    div.html(d.name)
+                      .style("left", (d3.event.pageX) + "px")
+                      .style("top", (d3.event.pageY - 28) + "px");
+                }
+
+            })
+            .on('mouseout', function(d) {
+                div.transition()
+                .duration(500)
+                .style("opacity",0)
+            })
+
+	)
+		.attr('cx', d => d.x)
+		.attr('cy', d => d.y);
+}
+
+</script>
