@@ -5,6 +5,8 @@ import datetime
 from .models import *
 from .forms import *
 from django.core import serializers
+from django.core.mail import send_mail, EmailMessage
+import time
 
 import math, random
 # Create your views here.
@@ -30,6 +32,8 @@ def index(request):
     kw = today[1]
     y = today[0]
 
+    enter = "Enter"
+
     if request.method == 'POST':
     # create a form instance and populate it with data from the request:
         form = TicketForm(request.POST)
@@ -53,6 +57,8 @@ def index(request):
 
             ticket.save()
             tid = ticket.id
+
+            enter = "Thank you for entering"
             # process the data in form.cleaned_data as required
             # ...
             # redirect to a new URL:
@@ -70,7 +76,8 @@ def index(request):
         'form':form,
         'nodes': nodes,
         'nextweek': nextweek,
-        'tid': tid
+        'tid': tid,
+        'enter': enter
     }
     return HttpResponse(template.render(context, request))
 
@@ -145,3 +152,15 @@ def draw():
 
             print(emails)
             print(message)
+
+
+            emessage = EmailMessage(
+                subject = 'MCC lunch lottery',
+                body = message,
+                from_email = 'nets@mcc-berlin.net',
+                to = emails,
+                cc = ['callaghan@mcc-berlin.net'],
+            )
+            s = emessage.send()
+            if s == 1:
+                time.sleep(10 + random.randrange(1,50,1)/10)
