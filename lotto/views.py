@@ -1,12 +1,15 @@
 from django.shortcuts import render
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.template import loader
 import datetime
 from .models import *
 from .forms import *
 from django.core import serializers
 from django.core.mail import send_mail, EmailMessage
+from django.shortcuts import redirect
 import time
+import json
+import datetime
 
 import math, random
 # Create your views here.
@@ -22,64 +25,69 @@ def iso_to_gregorian(iso_year, iso_week, iso_day):
     year_start = iso_year_start(iso_year)
     return year_start + datetime.timedelta(days=iso_day-1, weeks=iso_week-1)
 
+def entry(request):
+    dOffset = int(request.GET['dOffset'])
+    view_only = request.GET['view']
+    today = datetime.date.today()
+    day = today+datetime.timedelta(days=dOffset)
+    if view_only=="false":
+        ticket, created = Ticket.objects.get_or_create(
+            user=request.user, draw_date = day
+        )
+        if not created:
+            ticket.delete()
+    tickets = Ticket.objects.filter(draw_date=day)
+    nodes = json.dumps([{"id":t.id,"name":t.user.first_name} for t in tickets])
+
+    return JsonResponse(nodes, safe=False)
+
 def index(request):
 
     tid = 0
     template = loader.get_template('lotto/index.html')
 
-    today = datetime.date.today().isocalendar()
-    nextweek = iso_to_gregorian(today[0],today[1]+1,1)
-    kw = today[1]
-    y = today[0]
+    if not request.user.is_authenticated:
+        return redirect('/accounts/login')
 
-    enter = "Enter"
+    today = datetime.date.today()
+    dates = [today + datetime.timedelta(days=i) for i in range(14)]
+    dates = [d for d in dates if d.weekday() not in [5,6]]
+    entries = [Ticket.objects.filter(user=request.user,draw_date=d).exists() for d in dates]
 
-    if request.method == 'POST':
-    # create a form instance and populate it with data from the request:
-        form = TicketForm(request.POST)
-        # check whether it's valid:
-        if form.is_valid():
-            try:
-                ticket = Ticket.objects.get(
-                    email=form.cleaned_data['email'],
-                    kw=kw,
-                    year=y
-                )
-            except:
-                ticket = Ticket(
-                    email=form.cleaned_data['email'],
-                    kw=kw,
-                    year=y
-                )
-            ticket.name=form.cleaned_data['name']
-            ticket.availability=form.cleaned_data['availability']
+    dates = [{"date":d, "entry": e} for d,e in zip(dates,entries)]
+    for d in dates:
+        d['offset'] = (d['date']-today).days
 
-
-            ticket.save()
-            tid = ticket.id
-
-            enter = "Thank you for entering"
-            # process the data in form.cleaned_data as required
-            # ...
-            # redirect to a new URL:
-            #form.save()
-
-    # if a GET (or any other method) we'll create a blank form
-    else:
-        form = TicketForm()
-
-    tickets = Ticket.objects.filter(kw=kw,year=y)
-
-    nodes = serializers.serialize("json", tickets)
+    tickets = Ticket.objects.filter(draw_date=today)
+    nodes = json.dumps([{"id":t.id,"name":t.user.first_name} for t in tickets])
 
     context = {
-        'form':form,
-        'nodes': nodes,
-        'nextweek': nextweek,
-        'tid': tid,
-        'enter': enter
+        "dates": dates,
+        "entries": entries,
+        "nodes": nodes,
+        "tid": 0
     }
+
+
     return HttpResponse(template.render(context, request))
+
+from django.contrib.auth import login, authenticate
+from django.contrib.auth.forms import UserCreationForm
+from django.shortcuts import render, redirect
+
+def signup(request):
+    if request.method == 'POST':
+        form = UserCreationForm(request.POST)
+        if form.is_valid():
+            form.save()
+            username = form.cleaned_data.get('username')
+            raw_password = form.cleaned_data.get('password1')
+            user = authenticate(username=username, password=raw_password)
+            login(request, user)
+            return redirect('home')
+    else:
+        form = UserCreationForm()
+    return render(request, 'lotto/signup.html', {'form': form})
 
 def draw():
     today = datetime.date.today().isocalendar()

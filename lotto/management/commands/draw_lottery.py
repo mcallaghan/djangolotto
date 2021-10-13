@@ -2,6 +2,8 @@ from django.core.management.base import BaseCommand, CommandError
 from lotto.models import *
 from lotto.views import *
 import os
+import datetime
+import random
 
 class Command(BaseCommand):
     help = 'Draw the lottery and send out emails with the --email flag'
@@ -12,135 +14,80 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
 
-        def comma_separator(sequence, conjunction="and"):
-            if len(sequence) > 1:
-                sequence = list(sequence)
-                return '{} {} {}'.format(
-                    ', '.join(sequence[:-1]),
-                    conjunction,
-                    sequence[-1]
-                    )
-            try:
-                return sequence[0]
-            except IndexError:
-                raise ValueError('Must pass in at least one element')
+        def draw(tickets):
+            n_tickets = len(tickets)
 
-        email = options['email']
-        today = datetime.date.today().isocalendar()
-        #today = datetime.date(2018,5,14).isocalendar()
-        lastweek = iso_to_gregorian(today[0],today[1]-1,1).isocalendar()
-        kw = lastweek[1]
-        y = today[0]
+            if n_tickets < 6:
+                g_size=2
+            elif n_tickets < 12:
+                g_size= 3
+            else:
+                g_size = 4
+            n_groups = n_tickets//g_size
+            remainder = n_tickets % g_size
+            if g_size==4:
+                remainder=0
+                n_groups+=1
+            groups = [[] for x in range(n_groups)]
+            for t in tickets:
+                drawing = True
+                while drawing:
+                    g = random.randint(1,n_groups)-1
+                    if len(groups[g])<g_size+remainder:
+                        drawing=False
+                groups[g].append(t)
 
+            return groups
+
+        today = datetime.date.today()
         tickets = Ticket.objects.filter(
-            kw=kw,
-            year=y
-        )
+            draw_date=today
+        ).values_list('user_id',flat=True)
 
-        GROUP_SIZE = 4
-        MIN_SIZE = 2
+        if len(tickets) < 2:
+            if len(tickets)==1:
+                user = User.objects.get(pk=tickets[0])
+                emessage = EmailMessage(
+                    subject = 'MCC lunch lottery',
+                    body = f'Dear {user.first_name},\nI\'m sorry but there were not enough entries to draw the lottery today',
+                    from_email = "lottery@mcc-berlin.net",
+                    to = [user.email],
+                    cc = ['callaghan@mcc-berlin.net']
+                )
 
-        ngroups = math.ceil(tickets.count()/GROUP_SIZE)
+                s = emessage.send()
 
-        solutions = []
-        max_iter = 500
-        for i in range(max_iter):
-            # Set up some empty groups
-            groups = []
-            for i in range(ngroups):
-                groups.append({
-                    'days': set(),
-                    'members': set()
-                })
+            return
 
-            nogroup = set(tickets.values_list('id',flat=True))
-            no_solution=False
-            # Choose a random ticket to populate each group
-            tids = random.sample(nogroup,ngroups)
-            for g, tid in enumerate(tids):
-                groups[g]['members'].add(tid)
-                nogroup.remove(tid)
-                t = Ticket.objects.get(pk=tid)
-                groups[g]['days'].update(t.availability)
-            # add the remaining tickets to a random group they can fit into
-            for tid in random.sample(nogroup,len(nogroup)):
-                t = Ticket.objects.get(pk=tid)
-                pos_groups = [i for i, x in enumerate(groups) if len(x['days'].intersection(t.availability))>0 and len(x['members'])<GROUP_SIZE]
-                # No possible solutions, we'll have to start again!
-                if len(pos_groups)==0:
-                    no_solution=True
-                    break
-                g = random.sample(pos_groups,1)[0]
-                groups[g]['members'].add(tid)
-                nogroup.remove(tid)
-                groups[g]['days'] = groups[g]['days'].intersection(t.availability)
-            for g in groups:
-                if len(g['members']) < MIN_SIZE:
-                    no_solution=True
-            if no_solution==False:
-                if groups not in solutions:
-                    solutions.append(groups)
 
-        if len(solutions)==0:
-            persons = comma_separator(tickets.values_list(
-                'name',flat=True
-            ))
-            emails = list(tickets.values_list('email',flat=True))
-            message = 'Dear {},\nI\'m really sorry, but we couldn\'t find a solution that satisfied all your availabilities, but you are welcome to try to organise a lunch between yourselves'.format(
-                persons,
-            )
-            print(emails)
-            print(message)
+
+        for i in range(100):
+            groups = draw(tickets)
+            if min([len(g) for g in groups])>1:
+                break
+            if i==99:
+                return "Couldn't find a solution without a person on their own"
+
+
+        for group in groups:
+            users = User.objects.filter(pk__in=group)
+            names = list(users.values_list('first_name', flat=True))
+            namelist = f"{', '.join(names[:-1])} and {names[-1]}"
+
+            emails = list(users.values_list('email',flat=True))
+
+            message = f'Dear {namelist},\nYou have been selected to have lunch together today.\nGuten Appetit!'
+
             emessage = EmailMessage(
                 subject = 'MCC lunch lottery',
                 body = message,
-                from_email = 'nets@mcc-berlin.net',
+                from_email = 'lottery@mcc-berlin.net',
                 to = emails,
                 cc = ['callaghan@mcc-berlin.net'],
             )
-            if email:
-                print("Emailing this group")
-                s = emessage.send()
-                #s = 0
-                if s == 1:
-                    time.sleep(10 + random.randrange(1,50,1)/10)
-            else:
-                print("Not emailing this group")
-        else:
-            solution = random.sample(solutions,1)[0]
-
-            for group in solution:
-                tickets = Ticket.objects.filter(
-                    pk__in=group['members']
-                )
-                persons = comma_separator(tickets.values_list(
-                    'name',flat=True
-                ))
-                days = [x[1] for x in Ticket.DAYS if x[0] in group['days']]
-                emails = list(tickets.values_list('email',flat=True))
-                message = 'Dear {},\nYou have been selected to have lunch together on {}. The outcome was one of {} possible outcomes.\nGuten Appetit'.format(
-                    persons,
-                    #' OR '.join(days),
-                    comma_separator(days, "or"),
-                    len(solutions)
-                )
-
-                print(emails)
-                print(message)
+            s = emessage.send()
+            time.sleep(10 + random.randrange(1,50,1)/10)
 
 
-                emessage = EmailMessage(
-                    subject = 'MCC lunch lottery',
-                    body = message,
-                    from_email = 'nets@mcc-berlin.net',
-                    to = emails,
-                    cc = ['callaghan@mcc-berlin.net'],
-                )
-                if email:
-                    print("Emailing this group")
-                    s = emessage.send()
-                    #s = 0
-                    if s == 1:
-                        time.sleep(10 + random.randrange(1,50,1)/10)
-                else:
-                    print("Not emailing this group")
+
+        pass

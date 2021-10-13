@@ -1,0 +1,23 @@
+<head>
+{% load static %}
+<link rel="stylesheet" type="text/css" href="{% static 'lotto/style.css' %}" />
+
+</head>
+
+<body>
+
+<div class="main">
+
+<h2>Log In</h2>
+<form method="post">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <button type="submit">Log In</button>
+</form>
+
+<p>Forgotten your password?
+
+<p>Need to create an account? <a href="{% url 'signup' %}">Register</a>
+
+</div>
+</body>

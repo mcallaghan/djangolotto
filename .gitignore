@@ -1,0 +1,6 @@
+lotto/migrations/__pycache*
+lotto/__pycache*
+lotto/management/__pycache*
+lotto/settings.py
+lotto/wsgi.py
+manage.py
