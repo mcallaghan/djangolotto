@@ -10,6 +10,7 @@ from django.shortcuts import redirect
 import time
 import json
 import datetime
+from django.contrib.auth.decorators import login_required
 
 import math, random
 # Create your views here.
@@ -41,13 +42,14 @@ def entry(request):
 
     return JsonResponse(nodes, safe=False)
 
+@login_required
 def index(request):
 
     tid = 0
     template = loader.get_template('lotto/index.html')
 
-    if not request.user.is_authenticated:
-        return redirect('/accounts/login')
+    # if not request.user.is_authenticated:
+    #     return redirect('/accounts/login')
 
     today = datetime.date.today()
     dates = [today + datetime.timedelta(days=i) for i in range(14)]

@@ -1,3 +1,6 @@
+djangolotto.egg-info/*
+dist/*
+build/*
 lotto/migrations/__pycache*
 lotto/__pycache*
 lotto/management/__pycache*
